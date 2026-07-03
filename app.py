@@ -132,6 +132,35 @@ def search_data(
     return results
 
 
+# ── 啟動時從 Google Sheets 自動同步 ──────────────────
+@app.on_event("startup")
+async def startup_sync():
+    """啟動時自動從 Google Sheets 同步數據"""
+    url = os.environ.get("GOOGLE_SHEETS_URL", "")
+    if not url:
+        print("⚠️ GOOGLE_SHEETS_URL 未設置，跳過自動同步")
+        return
+    print(f"🔄 從 Google Sheets 同步數據...")
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                print(f"⚠️ Sheets 同步失敗 HTTP {resp.status_code}")
+                return
+            content = resp.text
+            if not content.strip():
+                print("⚠️ Sheets 返回空數據")
+                return
+            df = pd.read_csv(io.StringIO(content))
+            df = df.fillna("")
+            records = df.to_dict(orient="records")
+            save_table_data(records)
+            save_sheets_url(url)
+            print(f"✅ 啟動同步完成: {len(records)} 條記錄")
+    except Exception as e:
+        print(f"⚠️ 啟動同步失敗: {e}")
+
+
 # ── 路由 ──────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
