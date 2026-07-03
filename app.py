@@ -221,27 +221,88 @@ async def logout(request: Request):
     return RedirectResponse(url="/", status_code=302)
 
 
-@app.get("/search")
-async def search(
+@app.get("/data")
+async def get_data(request: Request):
+    """获取全部数据（用于下拉框选项，需登录）"""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+    data = load_table_data()
+    return JSONResponse({
+        "total": len(data),
+        "columns": list(data[0].keys()) if data else [],
+        "results": data,
+    })
+
+
+@app.get("/lookup")
+async def lookup(
     request: Request,
-    q: str = Query(""),
     player_id: str = Query(""),
     work: str = Query(""),
 ):
-    """搜索接口（需登录）"""
+    """玩家查询 — 检查是否繳費，返回对应结果（需登录）"""
     user = get_current_user(request)
     if not user:
         return JSONResponse({"error": "未登录"}, status_code=401)
 
+    if not player_id:
+        return JSONResponse({"error": "请输入玩家ID"}, status_code=400)
+
     data = load_table_data()
-    results = search_data(data, player_id=player_id, work=work, keyword=q)
+    if not data:
+        return JSONResponse({"error": "暂无数据"}, status_code=400)
+
+    columns = list(data[0].keys())
+    id_col = find_column(columns, "玩家id", "player", "id")
+    work_col = find_column(columns, "作品", "work", "項目", "项目")
+    paid_col = find_column(columns, "是否繳費", "繳費", "paid", "是否已購", "购买")
+
+    if not id_col:
+        return JSONResponse({"error": "表格中未找到「玩家ID」列"}, status_code=400)
+
+    # 精确查找
+    pid = player_id.strip().lower()
+    matching = []
+    for row in data:
+        if pid == str(row.get(id_col, "")).strip().lower():
+            if not work_col or not work or str(row.get(work_col, "")) == work:
+                matching.append(row)
+
+    if not matching:
+        return JSONResponse({
+            "found": False,
+            "message": "未找到该玩家ID的记录",
+            "player_id": player_id,
+            "work": work,
+        })
+
+    row = matching[0]
+    is_paid = str(row.get(paid_col, "")).strip() if paid_col else ""
+    actual_work = str(row.get(work_col, "")) if work_col else work
+
+    if is_paid in ("是", "yes", "Yes", "YES", "已缴费", "已繳費", "已购", "已購", "true", "True"):
+        return JSONResponse({
+            "found": True,
+            "paid": True,
+            "message": "該玩家已購",
+            "player_id": player_id,
+            "work": actual_work,
+        })
+
+    # 未繳費 — 生成举报信息
+    creator_col = find_column(columns, "創作者", "作者", "creator", "author")
+    creator = str(row.get(creator_col, "Bob")) if creator_col else "Bob"
+
+    report = f"創作者: {creator}\n作品: {actual_work}\n檢舉對象ID: {player_id}"
     return JSONResponse({
-        "keyword": q,
+        "found": True,
+        "paid": False,
+        "message": "未繳費",
         "player_id": player_id,
-        "work": work,
-        "total": len(results),
-        "results": results,
-        "columns": list(data[0].keys()) if data else [],
+        "work": actual_work,
+        "report": report,
+        "creator": creator,
     })
 
 
