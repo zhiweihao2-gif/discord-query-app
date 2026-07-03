@@ -32,6 +32,10 @@ DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "YOUR_CLIENT_SEC
 DISCORD_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "http://localhost:8000/auth/callback")
 # 管理员的 Discord 用户 ID（可上传表格）
 ADMIN_DISCORD_ID = os.environ.get("ADMIN_DISCORD_ID", "")
+# 黑名單 Discord ID（逗號分隔）
+BLOCKED_USERS = set(
+    uid.strip() for uid in os.environ.get("BLOCKED_USERS", "").split(",") if uid.strip()
+)
 SESSION_SECRET = os.environ.get("SESSION_SECRET", secrets.token_hex(32))
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
@@ -267,6 +271,10 @@ async def auth_callback(request: Request, code: str = "", state: str = ""):
             raise HTTPException(status_code=400, detail="Failed to get user info")
 
         user_data = user_resp.json()
+
+    # 檢查黑名單
+    if user_data["id"] in BLOCKED_USERS:
+        return HTMLResponse("<h1>⚠️ 您的帳號已被禁止訪問</h1>", status_code=403)
 
     # 保存到 session
     request.session["user"] = {
