@@ -79,16 +79,56 @@ def save_table_data(data: list[dict]):
         json.dump(data, f, ensure_ascii=False)
 
 
-def search_data(keyword: str, data: list[dict]) -> list[dict]:
-    """在表格数据中搜索关键字（不区分大小写）"""
-    if not keyword:
-        return data
-    kw = keyword.lower()
-    results = []
-    for row in data:
-        # 搜索所有字段的值
-        if any(kw in str(v).lower() for v in row.values()):
-            results.append(row)
+SHEETS_CONFIG_FILE = BASE_DIR / "sheets_config.json"
+
+
+def load_sheets_url() -> str:
+    """加载已保存的 Google Sheets URL"""
+    if SHEETS_CONFIG_FILE.exists():
+        with open(SHEETS_CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f).get("url", "")
+    return ""
+
+
+def save_sheets_url(url: str):
+    with open(SHEETS_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump({"url": url}, f)
+
+
+def find_column(columns: list, *keywords: str) -> str | None:
+    """在列名中查找匹配关键字的列（模糊匹配）"""
+    for col in columns:
+        col_lower = col.lower()
+        for kw in keywords:
+            if kw in col_lower:
+                return col
+    return None
+
+
+def search_data(
+    data: list[dict],
+    player_id: str = "",
+    work: str = "",
+    keyword: str = "",
+) -> list[dict]:
+    """多条件搜索表格数据"""
+    if not data:
+        return []
+    columns = list(data[0].keys())
+
+    # 自动识别"玩家ID"列和"作品"列
+    id_col = find_column(columns, "玩家id", "player", "id", "用戶id", "用户id")
+    work_col = find_column(columns, "作品", "work", "項目", "项目")
+
+    results = data
+    if player_id and id_col:
+        pid = player_id.lower()
+        results = [r for r in results if pid in str(r.get(id_col, "")).lower()]
+    if work and work_col:
+        results = [r for r in results if str(r.get(work_col, "")) == work]
+    if keyword:
+        kw = keyword.lower()
+        results = [r for r in results if any(kw in str(v).lower() for v in r.values())]
     return results
 
 
@@ -182,16 +222,23 @@ async def logout(request: Request):
 
 
 @app.get("/search")
-async def search(request: Request, q: str = Query("")):
+async def search(
+    request: Request,
+    q: str = Query(""),
+    player_id: str = Query(""),
+    work: str = Query(""),
+):
     """搜索接口（需登录）"""
     user = get_current_user(request)
     if not user:
         return JSONResponse({"error": "未登录"}, status_code=401)
 
     data = load_table_data()
-    results = search_data(q, data)
+    results = search_data(data, player_id=player_id, work=work, keyword=q)
     return JSONResponse({
         "keyword": q,
+        "player_id": player_id,
+        "work": work,
         "total": len(results),
         "results": results,
         "columns": list(data[0].keys()) if data else [],
@@ -269,6 +316,66 @@ async def avatar(request: Request, user_id: str, avatar_hash: str):
     async with httpx.AsyncClient() as client:
         resp = await client.get(url)
         return Response(content=resp.content, media_type="image/png")
+
+
+# ── Google Sheets 同步 ────────────────────────────────
+@app.get("/sheets/url")
+async def get_sheets_url(request: Request):
+    """获取已保存的 Google Sheets URL（仅管理员）"""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+    if not is_admin(user):
+        return JSONResponse({"error": "无权限"}, status_code=403)
+    return JSONResponse({"url": load_sheets_url()})
+
+
+@app.post("/sheets/sync")
+async def sync_sheets(request: Request):
+    """从 Google Sheets 同步数据（仅管理员）"""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+    if not is_admin(user):
+        return JSONResponse({"error": "无权限, 仅管理员可操作"}, status_code=403)
+
+    body = await request.json()
+    url = body.get("url", "").strip()
+    if not url:
+        return JSONResponse({"error": "URL 不能为空"}, status_code=400)
+
+    # 确保是 CSV 导出链接
+    if "output=csv" not in url:
+        return JSONResponse({
+            "error": "请使用 Google Sheets 的 CSV 发布链接。\n"
+                     "获取方式：文件 → 共享 → 发布到网络 → 逗号分隔值(.csv)"
+        }, status_code=400)
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return JSONResponse({"error": f"获取数据失败, HTTP {resp.status_code}"}, status_code=400)
+
+            content = resp.text
+            if not content.strip():
+                return JSONResponse({"error": "Google Sheets 返回空数据"}, status_code=400)
+
+            df = pd.read_csv(io.StringIO(content))
+            df = df.fillna("")
+
+    except Exception as e:
+        return JSONResponse({"error": f"解析失败: {str(e)}"}, status_code=400)
+
+    records = df.to_dict(orient="records")
+    save_table_data(records)
+    save_sheets_url(url)
+
+    return JSONResponse({
+        "message": "同步成功",
+        "rows": len(records),
+        "columns": list(df.columns),
+    })
 
 
 # ── 启动 ──────────────────────────────────────────────

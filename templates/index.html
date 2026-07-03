@@ -28,6 +28,9 @@
                     <button onclick="showUpload()" class="btn btn-admin">
                         <i class="fas fa-upload"></i> 上传表格
                     </button>
+                    <button onclick="showSheetsConfig()" class="btn btn-admin">
+                        <i class="fas fa-link"></i> Google Sheets
+                    </button>
                 {% endif %}
                 <a href="/logout" class="btn btn-logout">退出</a>
             {% else %}
@@ -53,8 +56,17 @@
             <!-- 已登录：搜索界面 -->
             <div class="search-section">
                 <h2><i class="fas fa-search"></i> 数据查询</h2>
-                <div class="search-box">
-                    <input type="text" id="searchInput" placeholder="输入关键字搜索..." autocomplete="off">
+                <div class="search-fields">
+                    <div class="field-group">
+                        <label for="playerId">玩家ID</label>
+                        <input type="text" id="playerId" placeholder="输入玩家ID..." autocomplete="off">
+                    </div>
+                    <div class="field-group">
+                        <label for="workSelect">選擇作品</label>
+                        <select id="workSelect">
+                            <option value="">全部作品</option>
+                        </select>
+                    </div>
                     <button onclick="doSearch()" class="btn btn-search">
                         <i class="fas fa-search"></i> 搜索
                     </button>
@@ -97,6 +109,29 @@
                             <p class="hint">支持 .xlsx / .xls / .csv 格式</p>
                         </div>
                         <div id="uploadResult" class="upload-result"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Google Sheets 配置弹窗 -->
+            <div id="sheetsModal" class="modal" style="display:none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-link"></i> Google Sheets 同步</h3>
+                        <button onclick="closeSheetsConfig()" class="close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="hint" style="margin-bottom:16px;">
+                            将表格发布到网络：Google Sheets → 文件 → 共享 → 发布到网络 → 选择"逗号分隔值(.csv)" → 复制链接
+                        </p>
+                        <div class="field-group" style="margin-bottom:16px;">
+                            <label for="sheetsUrl">Google Sheets CSV 链接</label>
+                            <input type="text" id="sheetsUrl" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" style="width:100%;">
+                        </div>
+                        <button onclick="fetchSheets()" class="btn btn-search" style="width:100%;">
+                            <i class="fas fa-sync"></i> 同步数据
+                        </button>
+                        <div id="sheetsResult" class="upload-result"></div>
                     </div>
                 </div>
             </div>
