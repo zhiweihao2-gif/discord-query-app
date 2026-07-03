@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>查询工具</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="nav-brand">
+            <i class="fas fa-search"></i>
+            <span>查询工具</span>
+        </div>
+        <div class="nav-right">
+            {% if user %}
+                <span class="user-info">
+                    {% if user.avatar %}
+                        <img src="/avatar/{{ user.id }}/{{ user.avatar }}" alt="avatar" class="avatar">
+                    {% else %}
+                        <div class="avatar-default"><i class="fas fa-user"></i></div>
+                    {% endif %}
+                    <span>{{ user.global_name or user.username }}</span>
+                </span>
+                {% if is_admin %}
+                    <button onclick="showUpload()" class="btn btn-admin">
+                        <i class="fas fa-upload"></i> 上传表格
+                    </button>
+                {% endif %}
+                <a href="/logout" class="btn btn-logout">退出</a>
+            {% else %}
+                <a href="/login" class="btn btn-discord">
+                    <i class="fab fa-discord"></i> 用 Discord 登录
+                </a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <!-- 主内容 -->
+    <main class="container">
+        {% if not user %}
+            <!-- 未登录 -->
+            <div class="hero">
+                <h1>🔍 查询工具</h1>
+                <p>使用 Discord 账号登录后即可查询数据</p>
+                <a href="/login" class="btn btn-discord btn-lg">
+                    <i class="fab fa-discord"></i> 用 Discord 登录
+                </a>
+            </div>
+        {% else %}
+            <!-- 已登录：搜索界面 -->
+            <div class="search-section">
+                <h2><i class="fas fa-search"></i> 数据查询</h2>
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="输入关键字搜索..." autocomplete="off">
+                    <button onclick="doSearch()" class="btn btn-search">
+                        <i class="fas fa-search"></i> 搜索
+                    </button>
+                </div>
+                <div id="tableInfo" class="table-info"></div>
+            </div>
+
+            <!-- 搜索结果 -->
+            <div id="results" class="results-section" style="display:none;">
+                <div class="results-header">
+                    <h3 id="resultsTitle"></h3>
+                    <button onclick="exportCSV()" class="btn btn-export">
+                        <i class="fas fa-download"></i> 导出CSV
+                    </button>
+                </div>
+                <div class="table-wrapper">
+                    <table id="resultsTable">
+                        <thead id="resultsHead"></thead>
+                        <tbody id="resultsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 上传弹窗 -->
+            {% if is_admin %}
+            <div id="uploadModal" class="modal" style="display:none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-upload"></i> 上传表格</h3>
+                        <button onclick="closeUpload()" class="close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="upload-area" id="uploadArea">
+                            <i class="fas fa-cloud-upload-alt fa-3x"></i>
+                            <p>拖拽文件到此处，或</p>
+                            <label for="fileInput" class="btn btn-upload">
+                                <i class="fas fa-folder-open"></i> 选择文件
+                            </label>
+                            <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none;">
+                            <p class="hint">支持 .xlsx / .xls / .csv 格式</p>
+                        </div>
+                        <div id="uploadResult" class="upload-result"></div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        {% endif %}
+    </main>
+
+    <script src="/static/main.js"></script>
+</body>
+</html>
