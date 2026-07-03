@@ -352,7 +352,7 @@ async def sync_sheets(request: Request):
         }, status_code=400)
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             resp = await client.get(url)
             if resp.status_code != 200:
                 return JSONResponse({"error": f"获取数据失败, HTTP {resp.status_code}"}, status_code=400)
