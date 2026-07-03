@@ -1,4 +1,6 @@
 .env
 uploads/
+data.json
+sheets_config.json
 __pycache__/
 *.pyc
