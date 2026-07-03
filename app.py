@@ -78,18 +78,23 @@ async def refresh_from_sheets() -> int:
     global _cache_data, _cache_time
     url = SHEETS_URL or load_sheets_url()
     if not url:
+        print("⚠️ refresh_from_sheets: 無 URL")
         return len(_cache_data)
+    print(f"🔄 正在從 Sheets 拉取: {url[:80]}...")
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             resp = await client.get(url)
+            print(f"   HTTP {resp.status_code}, 長度={len(resp.text)}")
             if resp.status_code != 200 or not resp.text.strip():
+                print(f"   ❌ 無效回應")
                 return len(_cache_data)
             df = pd.read_csv(io.StringIO(resp.text))
             df = df.fillna("")
             _cache_data = df.to_dict(orient="records")
             _cache_time = __import__("time").time()
-    except Exception:
-        pass
+            print(f"   ✅ 成功: {len(_cache_data)} 條, 列: {list(df.columns)}")
+    except Exception as e:
+        print(f"   ❌ 例外: {e}")
     return len(_cache_data)
 
 
@@ -294,6 +299,23 @@ async def get_data(request: Request):
         "total": len(data),
         "columns": list(data[0].keys()) if data else [],
         "results": data,
+    })
+
+
+@app.get("/status")
+async def status_endpoint(request: Request):
+    """診斷端點：檢查數據加載狀態"""
+    user = get_current_user(request)
+    if not user or not is_admin(user):
+        return JSONResponse({"error": "無權限"}, status_code=403)
+
+    import time as t
+    return JSONResponse({
+        "sheets_url_configured": bool(SHEETS_URL or load_sheets_url()),
+        "sheets_url_value": (SHEETS_URL or load_sheets_url())[:80] + "...",
+        "cache_count": len(_cache_data),
+        "cache_age_seconds": round(t.time() - _cache_time, 1) if _cache_time else -1,
+        "data_sample": _cache_data[:2] if _cache_data else [],
     })
 
 
