@@ -65,18 +65,59 @@ def is_admin(user: dict) -> bool:
     return str(user.get("id")) == str(ADMIN_DISCORD_ID)
 
 
-def load_table_data() -> list[dict]:
-    """加载当前上传的表格数据"""
-    if DATA_FILE.exists():
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+# ── 資料快取（記憶體，不怕重新部署清零）──────────────
+_cache_data: list[dict] = []
+_cache_time: float = 0
+CACHE_TTL = 60  # 60 秒內不重複拉 Google Sheets
+
+SHEETS_URL = os.environ.get("GOOGLE_SHEETS_URL", "")
 
 
-def save_table_data(data: list[dict]):
-    """保存表格数据"""
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
+async def refresh_from_sheets() -> int:
+    """從 Google Sheets 拉取最新數據，返回筆數"""
+    global _cache_data, _cache_time
+    url = SHEETS_URL or load_sheets_url()
+    if not url:
+        return len(_cache_data)
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200 or not resp.text.strip():
+                return len(_cache_data)
+            df = pd.read_csv(io.StringIO(resp.text))
+            df = df.fillna("")
+            _cache_data = df.to_dict(orient="records")
+            _cache_time = __import__("time").time()
+    except Exception:
+        pass
+    return len(_cache_data)
+
+
+async def get_cached_data(force: bool = False) -> list[dict]:
+    """取得資料：自動從 Sheets 刷新（60秒緩存）"""
+    global _cache_data, _cache_time
+    if force or not SHEETS_URL or not load_sheets_url():
+        return _cache_data
+    if __import__("time").time() - _cache_time > CACHE_TTL or not _cache_data:
+        await refresh_from_sheets()
+    return _cache_data
+
+
+def set_data(data: list[dict]):
+    """設置快取資料（上傳/Sync 時使用）"""
+    global _cache_data, _cache_time
+    _cache_data = data
+    _cache_time = __import__("time").time()
+    _save_to_disk(data)  # 備份到硬碟
+
+
+def _save_to_disk(data: list[dict]):
+    """寫入 data.json（備份用）"""
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception:
+        pass
 
 
 SHEETS_CONFIG_FILE = BASE_DIR / "sheets_config.json"
@@ -136,29 +177,19 @@ def search_data(
 @app.on_event("startup")
 async def startup_sync():
     """啟動時自動從 Google Sheets 同步數據"""
-    url = os.environ.get("GOOGLE_SHEETS_URL", "")
-    if not url:
-        print("⚠️ GOOGLE_SHEETS_URL 未設置，跳過自動同步")
-        return
-    print(f"🔄 從 Google Sheets 同步數據...")
-    try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                print(f"⚠️ Sheets 同步失敗 HTTP {resp.status_code}")
-                return
-            content = resp.text
-            if not content.strip():
-                print("⚠️ Sheets 返回空數據")
-                return
-            df = pd.read_csv(io.StringIO(content))
-            df = df.fillna("")
-            records = df.to_dict(orient="records")
-            save_table_data(records)
-            save_sheets_url(url)
-            print(f"✅ 啟動同步完成: {len(records)} 條記錄")
-    except Exception as e:
-        print(f"⚠️ 啟動同步失敗: {e}")
+    if SHEETS_URL:
+        print(f"🔄 啟動同步 Google Sheets...")
+        n = await refresh_from_sheets()
+        print(f"✅ 啟動同步完成: {n} 條記錄")
+    elif DATA_FILE.exists():
+        # 從硬碟恢復（無 Sheets URL 時）
+        global _cache_data, _cache_time
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            _cache_data = json.load(f)
+        _cache_time = __import__("time").time()
+        print(f"✅ 從本機恢復 {len(_cache_data)} 條記錄")
+    else:
+        print("⚠️ 無數據來源")
 
 
 # ── 路由 ──────────────────────────────────────────────
@@ -256,7 +287,7 @@ async def get_data(request: Request):
     user = get_current_user(request)
     if not user:
         return JSONResponse({"error": "未登录"}, status_code=401)
-    data = load_table_data()
+    data = await get_cached_data()
     return JSONResponse({
         "total": len(data),
         "columns": list(data[0].keys()) if data else [],
@@ -278,7 +309,7 @@ async def lookup(
     if not player_id:
         return JSONResponse({"error": "请输入玩家ID"}, status_code=400)
 
-    data = load_table_data()
+    data = await get_cached_data()
     if not data:
         return JSONResponse({"error": "暂无数据"}, status_code=400)
 
@@ -375,7 +406,7 @@ async def upload_table(request: Request, file: UploadFile = File(...)):
     records = df.to_dict(orient="records")
 
     # 保存
-    save_table_data(records)
+    set_data(records)
 
     # 同时保存原始文件备份
     saved_path = UPLOAD_DIR / file.filename
@@ -396,7 +427,7 @@ async def table_info(request: Request):
     user = get_current_user(request)
     if not user or not is_admin(user):
         return JSONResponse({"total_rows": 0, "columns": []})
-    data = load_table_data()
+    data = await get_cached_data()
     return JSONResponse({
         "total_rows": len(data),
         "columns": list(data[0].keys()) if data else [],
@@ -462,7 +493,7 @@ async def sync_sheets(request: Request):
         return JSONResponse({"error": f"解析失败: {str(e)}"}, status_code=400)
 
     records = df.to_dict(orient="records")
-    save_table_data(records)
+    set_data(records)
     save_sheets_url(url)
 
     return JSONResponse({
