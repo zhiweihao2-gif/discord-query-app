@@ -22,8 +22,13 @@ async function loadTableInfo() {
         const resp = await fetch('/table/info');
         const data = await resp.json();
         const el = document.getElementById('tableInfo');
-        if (!data.total_rows) { el.textContent = ''; return; }
-        el.textContent = `當前數據：${data.total_rows} 條記錄`;
+        // 僅管理員看到數據統計，但下拉框所有人都要載入
+        if (data.total_rows > 0) {
+            el.textContent = `當前數據：${data.total_rows} 條記錄`;
+        } else {
+            el.textContent = '';
+        }
+        // 從 /data 載入下拉框（所有人都可以）
         loadWorkOptions();
     } catch (e) { }
 }
