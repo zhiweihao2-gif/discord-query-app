@@ -96,9 +96,11 @@ async def refresh_from_sheets() -> int:
 async def get_cached_data(force: bool = False) -> list[dict]:
     """取得資料：自動從 Sheets 刷新（60秒緩存）"""
     global _cache_data, _cache_time
-    if force or not SHEETS_URL or not load_sheets_url():
+    if force:
         return _cache_data
-    if __import__("time").time() - _cache_time > CACHE_TTL or not _cache_data:
+    # 有 GOOGLE_SHEETS_URL 時，過期自動刷新
+    has_url = bool(SHEETS_URL or load_sheets_url())
+    if has_url and (__import__("time").time() - _cache_time > CACHE_TTL or not _cache_data):
         await refresh_from_sheets()
     return _cache_data
 
