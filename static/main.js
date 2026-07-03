@@ -16,17 +16,15 @@ document.addEventListener('DOMContentLoaded', function () {
     setupUpload();
 });
 
-// ── 表格信息 + 下拉框 ──
+// ── 表格資訊 + 下拉選項 ──
 async function loadTableInfo() {
     try {
         const resp = await fetch('/table/info');
         const data = await resp.json();
         const el = document.getElementById('tableInfo');
-        if (data.error) { el.textContent = ''; return; }
-        el.textContent = data.total_rows > 0
-            ? `当前数据: ${data.total_rows} 条记录`
-            : '暂无数据，请上传表格或同步 Google Sheets';
-        if (data.total_rows > 0) loadWorkOptions();
+        if (!data.total_rows) { el.textContent = ''; return; }
+        el.textContent = `當前數據：${data.total_rows} 條記錄`;
+        loadWorkOptions();
     } catch (e) { }
 }
 
@@ -39,7 +37,6 @@ async function loadWorkOptions() {
         const select = document.getElementById('workSelect');
         if (!select) return;
 
-        // 找"作品"列
         let workCol = null;
         for (const col of data.columns) {
             if (col.includes('作品') || col.toLowerCase().includes('work') || col.includes('項目')) {
@@ -58,7 +55,7 @@ async function loadWorkOptions() {
     } catch (e) { }
 }
 
-// ── 查询 ──
+// ── 查詢 ──
 async function doLookup() {
     const playerId = document.getElementById('playerId')?.value.trim() || '';
     const work = document.getElementById('workSelect')?.value || '';
@@ -66,12 +63,12 @@ async function doLookup() {
 
     if (!playerId) {
         resultDiv.style.display = 'block';
-        resultDiv.innerHTML = '<div class="result-card result-error">请输入玩家ID</div>';
+        resultDiv.innerHTML = '<div class="result-card result-error">請輸入玩家ID</div>';
         return;
     }
 
     resultDiv.style.display = 'block';
-    resultDiv.innerHTML = '<div class="result-card result-loading"><div class="spinner"></div><p>查询中...</p></div>';
+    resultDiv.innerHTML = '<div class="result-card result-loading"><div class="spinner"></div><p>查詢中...</p></div>';
 
     const params = new URLSearchParams();
     params.set('player_id', playerId);
@@ -86,13 +83,7 @@ async function doLookup() {
             return;
         }
 
-        if (!data.found) {
-            resultDiv.innerHTML = `<div class="result-card result-not-found"><i class="fas fa-search"></i> ${escapeHtml(data.message)}</div>`;
-            return;
-        }
-
         if (data.paid) {
-            // 已购
             resultDiv.innerHTML = `
                 <div class="result-card result-paid">
                     <div class="result-icon"><i class="fas fa-check-circle"></i></div>
@@ -100,13 +91,13 @@ async function doLookup() {
                     <div class="result-meta">玩家ID: ${escapeHtml(data.player_id)} | 作品: ${escapeHtml(data.work)}</div>
                 </div>`;
         } else {
-            // 未缴费 — 生成举报信息
+            // 未購買（不在列表中 = 同樣視為未購買）
             const reportText = data.report;
             resultDiv.innerHTML = `
                 <div class="result-card result-unpaid">
                     <div class="result-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                    <div class="result-title">⚠️ 未繳費</div>
-                    <div class="result-meta">点击下方按钮复制举报信息</div>
+                    <div class="result-title">⚠️ ${escapeHtml(data.message)}</div>
+                    <div class="result-meta">點擊下方按鈕複製舉報信息</div>
                     <div class="report-box">
                         <pre>${escapeHtml(reportText)}</pre>
                     </div>
@@ -115,11 +106,10 @@ async function doLookup() {
                     </button>
                     <span id="copyFeedback" class="copy-feedback"></span>
                 </div>`;
-            // 保存 report 到全局
             window._lastReport = reportText;
         }
     } catch (e) {
-        resultDiv.innerHTML = `<div class="result-card result-error"><i class="fas fa-times-circle"></i> 查询失败: ${escapeHtml(e.message)}</div>`;
+        resultDiv.innerHTML = `<div class="result-card result-error"><i class="fas fa-times-circle"></i> 查詢失敗: ${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -134,7 +124,6 @@ function copyReport() {
             setTimeout(() => { fb.style.display = 'none'; }, 2000);
         }
     }).catch(() => {
-        // 降级方案
         const ta = document.createElement('textarea');
         ta.value = text;
         ta.style.position = 'fixed';
@@ -158,7 +147,7 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-// ── 上传 ──
+// ── 上傳 ──
 function showUpload() { document.getElementById('uploadModal').style.display = 'flex'; }
 function closeUpload() {
     document.getElementById('uploadModal').style.display = 'none';
@@ -179,7 +168,7 @@ function setupUpload() {
 }
 async function uploadFile(file) {
     const rd = document.getElementById('uploadResult');
-    rd.innerHTML = '<p style="color:var(--text-muted);"><div class="spinner"></div> 上传中...</p>';
+    rd.innerHTML = '<p style="color:var(--text-muted);"><div class="spinner"></div> 上傳中...</p>';
     const fd = new FormData(); fd.append('file', file);
     try {
         const r = await fetch('/upload', { method: 'POST', body: fd });
@@ -189,7 +178,7 @@ async function uploadFile(file) {
             : `<p class="success"><i class="fas fa-check-circle"></i> ${d.message} — ${d.rows} 行</p>`;
         loadTableInfo();
     } catch (e) {
-        rd.innerHTML = `<p class="error"><i class="fas fa-times-circle"></i> 上传失败</p>`;
+        rd.innerHTML = '<p class="error"><i class="fas fa-times-circle"></i> 上傳失敗</p>';
     }
 }
 
@@ -207,7 +196,7 @@ function closeSheetsConfig() {
 async function fetchSheets() {
     const rd = document.getElementById('sheetsResult');
     const url = document.getElementById('sheetsUrl').value.trim();
-    if (!url) { rd.innerHTML = '<p class="error">请输入 Google Sheets 链接</p>'; return; }
+    if (!url) { rd.innerHTML = '<p class="error">請輸入 Google Sheets 連結</p>'; return; }
     rd.innerHTML = '<p style="color:var(--text-muted);"><div class="spinner"></div> 同步中...</p>';
     try {
         const r = await fetch('/sheets/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
@@ -217,6 +206,6 @@ async function fetchSheets() {
             : `<p class="success"><i class="fas fa-check-circle"></i> 同步成功 — ${d.rows} 行</p>`;
         loadTableInfo();
     } catch (e) {
-        rd.innerHTML = '<p class="error">同步失败</p>';
+        rd.innerHTML = '<p class="error">同步失敗</p>';
     }
 }

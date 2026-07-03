@@ -270,11 +270,15 @@ async def lookup(
                 matching.append(row)
 
     if not matching:
+        # 不在列表 = 未購買
         return JSONResponse({
             "found": False,
-            "message": "未找到该玩家ID的记录",
+            "paid": False,
+            "message": "未購買",
             "player_id": player_id,
             "work": work,
+            "report": f"創作者: Bob\n作品: {work}\n檢舉對象ID: {player_id}",
+            "creator": "Bob",
         })
 
     row = matching[0]
@@ -285,7 +289,7 @@ async def lookup(
         return JSONResponse({
             "found": True,
             "paid": True,
-            "message": "該玩家已購",
+            "message": "已購買",
             "player_id": player_id,
             "work": actual_work,
         })
@@ -298,7 +302,7 @@ async def lookup(
     return JSONResponse({
         "found": True,
         "paid": False,
-        "message": "未繳費",
+        "message": "未購買",
         "player_id": player_id,
         "work": actual_work,
         "report": report,
@@ -359,10 +363,10 @@ async def upload_table(request: Request, file: UploadFile = File(...)):
 
 @app.get("/table/info")
 async def table_info(request: Request):
-    """获取当前表格信息（需登录）"""
+    """获取当前表格信息（仅管理员）"""
     user = get_current_user(request)
-    if not user:
-        return JSONResponse({"error": "未登录"}, status_code=401)
+    if not user or not is_admin(user):
+        return JSONResponse({"total_rows": 0, "columns": []})
     data = load_table_data()
     return JSONResponse({
         "total_rows": len(data),
