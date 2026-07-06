@@ -346,7 +346,7 @@ async def lookup(
         return JSONResponse({"error": "暂无数据"}, status_code=400)
 
     columns = list(data[0].keys())
-    id_col = find_column(columns, "玩家id", "player", "id")
+    id_col = find_column(columns, "玩家id", "player", "id", "msw", "ms", "用戶id", "用户id")
     work_col = find_column(columns, "作品", "work", "項目", "项目")
     paid_col = find_column(columns, "是否繳費", "繳費", "paid", "是否已購", "购买")
 
