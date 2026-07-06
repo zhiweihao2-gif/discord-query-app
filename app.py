@@ -332,6 +332,7 @@ async def status_endpoint(request: Request):
             break
 
     return JSONResponse({
+        "version": "3.0",
         "sheets_url_configured": bool(SHEETS_URL or load_sheets_url()),
         "cache_count": len(data),
         "cache_age_seconds": round(t.time() - _cache_time, 1) if _cache_time else -1,
@@ -369,11 +370,11 @@ async def lookup(
     if not id_col:
         return JSONResponse({"error": "表格中未找到「玩家ID」列"}, status_code=400)
 
-    # 精确查找
-    pid = player_id.strip().lower()
+    # 精確查找（無視前綴#）
+    pid = player_id.strip().lstrip("#").lower()
     matching = []
     for row in data:
-        if pid == str(row.get(id_col, "")).strip().lower():
+        if pid == str(row.get(id_col, "")).strip().lstrip("#").lower():
             if not work_col or not work or str(row.get(work_col, "")) == work:
                 matching.append(row)
 
