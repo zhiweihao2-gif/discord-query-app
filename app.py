@@ -318,12 +318,28 @@ async def status_endpoint(request: Request):
         return JSONResponse({"error": "無權限"}, status_code=403)
 
     import time as t
+    data = await get_cached_data()
+    columns = list(data[0].keys()) if data else []
+    id_col = find_column(columns, "玩家id", "player", "id", "msw", "ms", "用戶id", "用户id")
+    work_col = find_column(columns, "作品", "work", "項目", "项目")
+    paid_col = find_column(columns, "是否繳費", "繳費", "paid", "是否已購", "购买")
+
+    # 抓取第一條有數據的行
+    sample_row = None
+    for row in data:
+        if row.get(id_col or "", "").strip():
+            sample_row = row
+            break
+
     return JSONResponse({
         "sheets_url_configured": bool(SHEETS_URL or load_sheets_url()),
-        "sheets_url_value": (SHEETS_URL or load_sheets_url())[:80] + "...",
-        "cache_count": len(_cache_data),
+        "cache_count": len(data),
         "cache_age_seconds": round(t.time() - _cache_time, 1) if _cache_time else -1,
-        "data_sample": _cache_data[:2] if _cache_data else [],
+        "columns": columns,
+        "detected_id_col": id_col,
+        "detected_work_col": work_col,
+        "detected_paid_col": paid_col,
+        "sample_row": sample_row,
     })
 
 
