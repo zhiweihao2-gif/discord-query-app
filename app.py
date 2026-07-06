@@ -148,11 +148,11 @@ def save_sheets_url(url: str):
 
 
 def find_column(columns: list, *keywords: str) -> str | None:
-    """在列名中查找匹配关键字的列（模糊匹配）"""
-    for col in columns:
-        col_lower = col.lower()
-        for kw in keywords:
-            if kw in col_lower:
+    """在列名中查找匹配關鍵字的列（關鍵字優先級 > 欄位順序）"""
+    for kw in keywords:
+        kw_lower = kw.lower()
+        for col in columns:
+            if kw_lower in col.lower():
                 return col
     return None
 
