@@ -319,7 +319,7 @@ async def status_endpoint(request: Request):
 
     import time as t
     data = await get_cached_data()
-    columns = list(data[0].keys()) if data else []
+    columns = list(set().union(*(set(row.keys()) for row in data))) if data else []
     id_col = find_column(columns, "msw", "ms", "玩家id", "player", "id", "用戶id", "用户id")
     work_col = find_column(columns, "作品", "work", "項目", "项目")
     paid_col = find_column(columns, "是否繳費", "繳費", "paid", "是否已購", "购买")
@@ -362,7 +362,7 @@ async def lookup(
     if not data:
         return JSONResponse({"error": "暂无数据"}, status_code=400)
 
-    columns = list(data[0].keys())
+    columns = list(set().union(*(set(row.keys()) for row in data)))
     id_col = find_column(columns, "msw", "ms", "玩家id", "player", "id", "用戶id", "用户id")
     work_col = find_column(columns, "作品", "work", "項目", "项目")
     paid_col = find_column(columns, "是否繳費", "繳費", "paid", "是否已購", "购买")
@@ -388,34 +388,51 @@ async def lookup(
             "work": work,
             "report": f"創作者: Bob\n作品: {work}\n檢舉對象ID: {player_id}",
             "creator": "Bob",
+            "works": [],
         })
 
-    row = matching[0]
-    is_paid = str(row.get(paid_col, "")).strip() if paid_col else ""
-    actual_work = str(row.get(work_col, "")) if work_col else work
+    creator_col = find_column(columns, "創作者", "作者", "creator", "author")
 
-    if is_paid in ("是", "yes", "Yes", "YES", "已缴费", "已繳費", "已购", "已購", "true", "True"):
+    # 收集所有匹配作品的資訊
+    works_info = []
+    for row in matching:
+        w = str(row.get(work_col, "")) if work_col else ""
+        p = str(row.get(paid_col, "")).strip() if paid_col else ""
+        is_p = p in ("是", "yes", "Yes", "YES", "已缴费", "已繳費", "已购", "已購", "true", "True")
+        c = str(row.get(creator_col, "Bob")) if creator_col else "Bob"
+        works_info.append({
+            "work": w,
+            "paid": is_p,
+            "creator": c,
+            "report": f"創作者: {c}\n作品: {w}\n檢舉對象ID: {player_id}" if not is_p else "",
+        })
+
+    all_paid = all(w["paid"] for w in works_info)
+    unpaid_works = [w for w in works_info if not w["paid"]]
+
+    if all_paid:
+        work_names = "、".join(w["work"] for w in works_info)
         return JSONResponse({
             "found": True,
             "paid": True,
-            "message": "已購買",
+            "all_paid": True,
+            "message": f"已購買",
             "player_id": player_id,
-            "work": actual_work,
+            "work": work_names,
+            "works": works_info,
         })
 
-    # 未繳費 — 生成举报信息
-    creator_col = find_column(columns, "創作者", "作者", "creator", "author")
-    creator = str(row.get(creator_col, "Bob")) if creator_col else "Bob"
-
-    report = f"創作者: {creator}\n作品: {actual_work}\n檢舉對象ID: {player_id}"
+    # 有未購買的作品 — 生成舉報信息
+    reports = [w["report"] for w in unpaid_works]
     return JSONResponse({
         "found": True,
         "paid": False,
-        "message": "未購買",
+        "all_paid": False,
+        "message": f"未購買（{len(unpaid_works)}/{len(works_info)} 件）",
         "player_id": player_id,
-        "work": actual_work,
-        "report": report,
-        "creator": creator,
+        "work": "、".join(w["work"] for w in unpaid_works),
+        "report": "\n\n".join(reports),
+        "works": works_info,
     })
 
 

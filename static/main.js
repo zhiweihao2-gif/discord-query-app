@@ -89,14 +89,19 @@ async function doLookup() {
         }
 
         if (data.paid) {
+            // 已購買 — 顯示所有作品
+            const workList = data.works.map(w =>
+                `<span class="work-badge work-paid">${escapeHtml(w.work)} ✅</span>`
+            ).join(' ');
             resultDiv.innerHTML = `
                 <div class="result-card result-paid">
                     <div class="result-icon"><i class="fas fa-check-circle"></i></div>
                     <div class="result-title">${escapeHtml(data.message)}</div>
-                    <div class="result-meta">玩家ID: ${escapeHtml(data.player_id)} | 作品: ${escapeHtml(data.work)}</div>
+                    <div class="result-meta">玩家ID: ${escapeHtml(data.player_id)}</div>
+                    <div class="work-list">${workList}</div>
                 </div>`;
         } else {
-            // 未購買（不在列表中 = 同樣視為未購買）
+            // 未購買 — 顯示舉報信息（多個作品分段顯示）
             const reportText = data.report;
             resultDiv.innerHTML = `
                 <div class="result-card result-unpaid">

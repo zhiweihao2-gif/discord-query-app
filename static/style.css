@@ -220,6 +220,15 @@ body {
     font-size: 14px;
     margin-left: 12px;
 }
+.work-list { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
+.work-badge {
+    background: rgba(45, 199, 112, 0.15);
+    border: 1px solid rgba(45, 199, 112, 0.3);
+    border-radius: 20px;
+    padding: 6px 16px;
+    font-size: 14px;
+    color: var(--green);
+}
 
 /* ── 结果表格 ── */
 .results-section { margin-top: 24px; }
