@@ -5,5 +5,6 @@ sheets_config.json
 leaderboard.json
 reported_ids.json
 report_map.json
+backups/
 __pycache__/
 *.pyc

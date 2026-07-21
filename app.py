@@ -587,6 +587,96 @@ async def get_leaderboard_details(request: Request):
     return JSONResponse({"users": result, "total": len(_reported_ids)})
 
 
+def _export_backup_bytes() -> tuple[bytes, str] | None:
+    """生成排行榜備份 Excel 字節，返回 (data, filename)"""
+    from datetime import date
+    import io
+    try:
+        import openpyxl
+        today = date.today().strftime("%Y%m%d")
+        filename = f"檢舉信息{today}.xlsx"
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+        ws1.title = "用戶統計"
+        ws1.append(["用戶名", "檢舉次數"])
+        for did, info in sorted(_leaderboard.items(), key=lambda x: x[1]["count"], reverse=True):
+            ws1.append([info["username"], info["count"]])
+        ws2 = wb.create_sheet("檢舉ID明細")
+        ws2.append(["msw ID", "檢舉者Discord ID", "檢舉者用戶名"])
+        for msw_key, did in sorted(_report_map.items()):
+            info = _leaderboard.get(did, {})
+            ws2.append([msw_key, did, info.get("username", did)])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return buf.getvalue(), filename
+    except Exception as e:
+        print(f"⚠️ 備份導出失敗: {e}")
+        return None
+
+
+@app.post("/leaderboard/reset")
+async def reset_leaderboard(request: Request):
+    """管理員專用：清除排行榜數據，清除前自動導出 Excel 備份"""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登入"}, status_code=401)
+    if not is_admin(user):
+        return JSONResponse({"error": "无权限，仅管理员可操作"}, status_code=403)
+
+    global _leaderboard, _reported_ids, _report_map
+
+    # ── 導出 Excel 備份（返回給用戶下載）──
+    result = _export_backup_bytes()
+    if result:
+        data, filename = result
+        print(f"📦 備份生成: {filename}, {len(data)} bytes")
+    else:
+        print("⚠️ 備份導出失敗")
+        data, filename = b"", "backup_fail.xlsx"
+
+    # ── 清除數據 ──
+    _leaderboard.clear()
+    _reported_ids.clear()
+    _report_map.clear()
+    save_leaderboard()
+
+    from fastapi.responses import Response
+    import urllib.parse
+    ascii_name = f"report_{urllib.parse.quote(filename)}"
+    encoded_filename = urllib.parse.quote(filename)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded_filename}"},
+    )
+
+
+@app.post("/leaderboard/export")
+async def export_leaderboard(request: Request):
+    """管理員專用：導出排行榜備份 Excel（不重置）"""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登入"}, status_code=401)
+    if not is_admin(user):
+        return JSONResponse({"error": "无权限，仅管理员可操作"}, status_code=403)
+
+    result = _export_backup_bytes()
+    if not result:
+        return JSONResponse({"error": "導出失敗，暫無數據"}, status_code=400)
+
+    data, filename = result
+    from fastapi.responses import Response
+    import urllib.parse
+    ascii_name = f"report_{urllib.parse.quote(filename)}"
+    encoded_filename = urllib.parse.quote(filename)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded_filename}"},
+    )
+
+
 @app.post("/upload")
 async def upload_table(request: Request, file: UploadFile = File(...)):
     """上传表格（仅管理员）"""

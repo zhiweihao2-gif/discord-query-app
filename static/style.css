@@ -253,6 +253,18 @@ body {
     background: linear-gradient(135deg, #ffaa00, #ff8800);
     color: white;
 }
+.btn-danger {
+    background: var(--red);
+    color: white;
+    border: none;
+}
+.btn-danger:hover { opacity: 0.85; }
+.btn-export {
+    background: #217346;
+    color: white;
+    border: none;
+}
+.btn-export:hover { opacity: 0.85; }
 .modal-large { width: 560px; max-height: 80vh; overflow-y: auto; }
 
 /* ── 排行榜 ── */

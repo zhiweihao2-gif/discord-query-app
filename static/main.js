@@ -252,9 +252,15 @@ async function loadLeaderboard() {
                 <div class="lb-stat"><span class="lb-num">${d.my_count}</span><span class="lb-label">我的檢舉</span></div>
                 <div class="lb-stat"><span class="lb-num">${d.my_rank ? '#' + d.my_rank : '-'}</span><span class="lb-label">我的排名</span></div>
             </div>
-            ${d.is_admin ? `<div style="text-align:center;margin-top:12px;">
+            ${d.is_admin ? `<div style="text-align:center;margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
                 <button onclick="showLeaderboardDetails()" class="btn btn-admin" style="font-size:13px;padding:6px 16px;">
-                    <i class="fas fa-search"></i> 查看詳情（管理員）
+                    <i class="fas fa-search"></i> 查看詳情
+                </button>
+                <button onclick="exportLeaderboard()" class="btn btn-export" style="font-size:13px;padding:6px 16px;">
+                    <i class="fas fa-file-excel"></i> 導出備份
+                </button>
+                <button onclick="resetLeaderboard()" class="btn btn-danger" style="font-size:13px;padding:6px 16px;">
+                    <i class="fas fa-redo-alt"></i> 重置
                 </button>
             </div>` : ''}`;
 
@@ -298,5 +304,57 @@ async function showLeaderboardDetails() {
         }).join('');
     } catch (e) {
         listEl.innerHTML = '<p class="error">載入失敗</p>';
+    }
+}
+async function resetLeaderboard() {
+    if (!confirm('確定要重置排行榜？所有檢舉數據將被清除，無法復原！')) return;
+    try {
+        const r = await fetch('/leaderboard/reset', { method: 'POST' });
+        const ct = r.headers.get('Content-Type') || '';
+        if (ct.includes('json')) {
+            const d = await r.json();
+            alert('❌ ' + (d.error || '重置失敗'));
+            return;
+        }
+        // 是文件 → 觸發下載
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const cd = r.headers.get('Content-Disposition') || '';
+        // 優先取 filename*（支持中文），再取 filename
+        const starMatch = cd.match(/filename\*=(?:UTF-8'')?([^;]+)/);
+        const plainMatch = cd.match(/filename="([^"]+)"/);
+        a.download = starMatch ? decodeURIComponent(starMatch[1]) : (plainMatch ? plainMatch[1] : '檢舉信息.xlsx');
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+        loadLeaderboard();
+    } catch (e) {
+        alert('❌ 重置失敗');
+    }
+}
+async function exportLeaderboard() {
+    try {
+        const r = await fetch('/leaderboard/export', { method: 'POST' });
+        const ct = r.headers.get('Content-Type') || '';
+        if (ct.includes('json')) {
+            const d = await r.json();
+            alert('❌ ' + (d.error || '導出失敗'));
+            return;
+        }
+        // 是文件 → 觸發下載
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const cd = r.headers.get('Content-Disposition') || '';
+        // 優先取 filename*（支持中文），再取 filename
+        const starMatch = cd.match(/filename\*=(?:UTF-8'')?([^;]+)/);
+        const plainMatch = cd.match(/filename="([^"]+)"/);
+        a.download = starMatch ? decodeURIComponent(starMatch[1]) : (plainMatch ? plainMatch[1] : '檢舉信息.xlsx');
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        alert('❌ 導出失敗');
     }
 }
