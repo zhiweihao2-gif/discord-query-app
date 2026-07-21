@@ -101,12 +101,19 @@ async function doLookup() {
                     <div class="work-list">${workList}</div>
                 </div>`;
         } else {
-            // 未購買 — 顯示舉報信息（多個作品分段顯示）
+            // 未購買 - 顯示舉報信息（多個作品分段顯示）
             const reportText = data.report;
+            let badge = '';
+            if (data.already_reported) {
+                badge = '<span class="reported-badge"><i class="fas fa-flag"></i> 該ID已被檢舉</span>';
+            } else if (data.new_report) {
+                badge = '<span class="new-report-badge"><i class="fas fa-check"></i> 檢舉成功！+1</span>';
+            }
             resultDiv.innerHTML = `
                 <div class="result-card result-unpaid">
                     <div class="result-icon"><i class="fas fa-exclamation-triangle"></i></div>
                     <div class="result-title">⚠️ ${escapeHtml(data.message)}</div>
+                    ${badge}
                     <div class="result-meta">點擊下方按鈕複製舉報信息</div>
                     <div class="report-box">
                         <pre>${escapeHtml(reportText)}</pre>
@@ -217,5 +224,79 @@ async function fetchSheets() {
         loadTableInfo();
     } catch (e) {
         rd.innerHTML = '<p class="error">同步失敗</p>';
+    }
+}
+
+// ── 排行榜 ──
+function showLeaderboard() {
+    document.getElementById('leaderboardModal').style.display = 'flex';
+    loadLeaderboard();
+}
+function closeLeaderboard() {
+    document.getElementById('leaderboardModal').style.display = 'none';
+}
+async function loadLeaderboard() {
+    const statsEl = document.getElementById('leaderboardStats');
+    const listEl = document.getElementById('leaderboardList');
+    statsEl.innerHTML = '<div class="spinner"></div>';
+    listEl.innerHTML = '';
+    try {
+        const r = await fetch('/leaderboard');
+        const d = await r.json();
+        if (d.error) { statsEl.innerHTML = `<p class="error">${escapeHtml(d.error)}</p>`; return; }
+
+        statsEl.innerHTML = `
+            <div class="lb-stats">
+                <div class="lb-stat"><span class="lb-num">${d.total_reports}</span><span class="lb-label">總檢舉數</span></div>
+                <div class="lb-stat"><span class="lb-num">${d.total_users}</span><span class="lb-label">參與人數</span></div>
+                <div class="lb-stat"><span class="lb-num">${d.my_count}</span><span class="lb-label">我的檢舉</span></div>
+                <div class="lb-stat"><span class="lb-num">${d.my_rank ? '#' + d.my_rank : '-'}</span><span class="lb-label">我的排名</span></div>
+            </div>
+            ${d.is_admin ? `<div style="text-align:center;margin-top:12px;">
+                <button onclick="showLeaderboardDetails()" class="btn btn-admin" style="font-size:13px;padding:6px 16px;">
+                    <i class="fas fa-search"></i> 查看詳情（管理員）
+                </button>
+            </div>` : ''}`;
+
+        if (d.leaderboard.length === 0) {
+            listEl.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:32px;">暫無記錄</p>';
+            return;
+        }
+
+        listEl.innerHTML = d.leaderboard.map(item => {
+            const medal = item.rank === 1 ? '🥇' : item.rank === 2 ? '🥈' : item.rank === 3 ? '🥉' : `${item.rank}`;
+            return `<div class="lb-row ${item.rank <= 3 ? 'lb-top' : ''}">
+                <span class="lb-rank">${medal}</span>
+                <span class="lb-user">${escapeHtml(item.user)}</span>
+                <span class="lb-count">${item.count} 次</span>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        statsEl.innerHTML = '<p class="error">載入失敗</p>';
+    }
+}
+async function showLeaderboardDetails() {
+    const listEl = document.getElementById('leaderboardList');
+    listEl.innerHTML = '<div class="spinner"></div>';
+    try {
+        const r = await fetch('/leaderboard/details');
+        const d = await r.json();
+        if (d.error) { listEl.innerHTML = `<p class="error">${escapeHtml(d.error)}</p>`; return; }
+        if (!d.users || d.users.length === 0) {
+            listEl.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:32px;">暫無數據</p>';
+            return;
+        }
+        listEl.innerHTML = d.users.map(u => {
+            const ids = u.ids.map(id => `<span class="detail-id">${escapeHtml(id)}</span>`).join(' ');
+            return `<div class="detail-card">
+                <div class="detail-card-header">
+                    <span class="detail-user">${escapeHtml(u.username)}</span>
+                    <span class="detail-count">${u.count} 次</span>
+                </div>
+                <div class="detail-ids">${ids}</div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        listEl.innerHTML = '<p class="error">載入失敗</p>';
     }
 }

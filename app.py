@@ -132,6 +132,79 @@ def _save_to_disk(data: list[dict]):
 
 
 SHEETS_CONFIG_FILE = BASE_DIR / "sheets_config.json"
+LEADERBOARD_FILE = BASE_DIR / "leaderboard.json"  # Discord用戶檢舉次數
+REPORTED_IDS_FILE = BASE_DIR / "reported_ids.json"  # 已被檢舉的 msw ID
+REPORT_MAP_FILE = BASE_DIR / "report_map.json"  # mswID → 檢舉者的 discord_id
+
+
+# ── 排行榜數據 ──
+_leaderboard: dict[str, dict] = {}  # {discord_id: {"count": int, "username": str}}
+_reported_ids: set[str] = set()  # 已被檢舉的 msw ID（小寫）
+_report_map: dict[str, str] = {}  # {msw_id_lower: discord_id}
+
+
+def load_leaderboard():
+    """從硬碟恢復排行榜（兼容舊格式）"""
+    global _leaderboard, _reported_ids, _report_map
+    if LEADERBOARD_FILE.exists():
+        with open(LEADERBOARD_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        if raw and isinstance(next(iter(raw.values())), int):
+            _leaderboard = {k: {"count": v, "username": k} for k, v in raw.items()}
+        else:
+            _leaderboard = raw
+    if REPORTED_IDS_FILE.exists():
+        with open(REPORTED_IDS_FILE, "r", encoding="utf-8") as f:
+            _reported_ids = set(json.load(f))
+    if REPORT_MAP_FILE.exists():
+        with open(REPORT_MAP_FILE, "r", encoding="utf-8") as f:
+            _report_map = json.load(f)
+
+
+def save_leaderboard():
+    """保存排行榜到硬碟"""
+    try:
+        with open(LEADERBOARD_FILE, "w", encoding="utf-8") as f:
+            json.dump(_leaderboard, f, ensure_ascii=False)
+    except Exception:
+        pass
+    try:
+        with open(REPORTED_IDS_FILE, "w", encoding="utf-8") as f:
+            json.dump(list(_reported_ids), f, ensure_ascii=False)
+    except Exception:
+        pass
+    try:
+        with open(REPORT_MAP_FILE, "w", encoding="utf-8") as f:
+            json.dump(_report_map, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def mask_username(username: str) -> str:
+    """用戶名密文處理：顯示前2位 + **** + 後2位"""
+    s = username.strip()
+    if len(s) <= 4:
+        return s[:1] + "****"
+    return s[:2] + "****" + s[-2:]
+
+
+def add_report(discord_id: str, username: str, msw_id: str) -> bool:
+    """
+    記錄一次檢舉。
+    返回 True = 首次檢舉成功（計數+1）
+    返回 False = 該 msw ID 已被檢舉過（不計數）
+    """
+    msw_key = msw_id.strip().lstrip("#").lower()
+    if msw_key in _reported_ids:
+        return False  # 已被檢舉
+    _reported_ids.add(msw_key)
+    if discord_id in _leaderboard:
+        _leaderboard[discord_id]["count"] += 1
+    else:
+        _leaderboard[discord_id] = {"count": 1, "username": username}
+    _report_map[msw_key] = discord_id
+    save_leaderboard()
+    return True
 
 
 def load_sheets_url() -> str:
@@ -201,6 +274,9 @@ async def startup_sync():
         print(f"✅ 從本機恢復 {len(_cache_data)} 條記錄")
     else:
         print("⚠️ 無數據來源")
+    # 載入排行榜
+    load_leaderboard()
+    print(f"✅ 排行榜載入: {len(_leaderboard)} 位用戶, {len(_reported_ids)} 個已檢舉ID")
 
 
 # ── 路由 ──────────────────────────────────────────────
@@ -277,10 +353,12 @@ async def auth_callback(request: Request, code: str = "", state: str = ""):
         return HTMLResponse("<h1>⚠️ 您的帳號已被禁止訪問</h1>", status_code=403)
 
     # 保存到 session
+    print(f"🔍 Discord user data: {user_data}")
     request.session["user"] = {
         "id": user_data["id"],
         "username": user_data.get("username", ""),
         "global_name": user_data.get("global_name", ""),
+        "display_name": user_data.get("global_name") or user_data.get("username") or f"用戶{user_data['id'][-4:]}",
         "avatar": user_data.get("avatar", ""),
         "email": user_data.get("email", ""),
     }
@@ -379,7 +457,12 @@ async def lookup(
                 matching.append(row)
 
     if not matching:
-        # 不在列表 = 未購買
+        # 不在列表 = 未購買 → 記錄檢舉
+        msw_key = player_id.strip().lstrip("#").lower()
+        already_reported = msw_key in _reported_ids
+        is_new_report = False
+        if not already_reported:
+            is_new_report = add_report(user["id"], user.get("display_name", user["id"]), player_id)
         return JSONResponse({
             "found": False,
             "paid": False,
@@ -389,6 +472,8 @@ async def lookup(
             "report": f"創作者: Bob\n作品: {work}\n檢舉對象ID: {player_id}",
             "creator": "Bob",
             "works": [],
+            "already_reported": already_reported,
+            "new_report": is_new_report,
         })
 
     creator_col = find_column(columns, "創作者", "作者", "creator", "author")
@@ -422,7 +507,12 @@ async def lookup(
             "works": works_info,
         })
 
-    # 有未購買的作品 — 生成舉報信息
+    # 有未購買的作品 - 生成舉報信息 + 記錄檢舉
+    msw_key = player_id.strip().lstrip("#").lower()
+    already_reported = msw_key in _reported_ids
+    is_new_report = False
+    if not already_reported:
+        is_new_report = add_report(user["id"], user.get("display_name", user["id"]), player_id)
     reports = [w["report"] for w in unpaid_works]
     return JSONResponse({
         "found": True,
@@ -433,7 +523,68 @@ async def lookup(
         "work": "、".join(w["work"] for w in unpaid_works),
         "report": "\n\n".join(reports),
         "works": works_info,
+        "already_reported": already_reported,
+        "new_report": is_new_report,
     })
+
+
+@app.get("/leaderboard")
+async def get_leaderboard(request: Request):
+    """排行榜：顯示檢舉次數，Discord ID 密文處理"""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登入"}, status_code=401)
+
+    # 按次數降序排列
+    ranked = sorted(_leaderboard.items(), key=lambda x: x[1]["count"], reverse=True)
+    board = []
+    for rank, (discord_id, info) in enumerate(ranked, 1):
+        board.append({
+            "rank": rank,
+            "user": mask_username(info["username"]),
+            "count": info["count"],
+        })
+
+    # 當前用戶的排名
+    my_count = _leaderboard.get(user["id"], {}).get("count", 0)
+    my_rank = next(
+        (r for r, (uid, _) in enumerate(ranked, 1) if uid == user["id"]),
+        None
+    )
+
+    return JSONResponse({
+        "leaderboard": board,
+        "total_reports": len(_reported_ids),
+        "total_users": len(_leaderboard),
+        "my_count": my_count,
+        "my_rank": my_rank,
+        "is_admin": is_admin(user),
+    })
+
+
+@app.get("/leaderboard/details")
+async def get_leaderboard_details(request: Request):
+    """管理員專用：查看每個用戶檢舉了哪些具體 ID"""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登入"}, status_code=401)
+    if not is_admin(user):
+        return JSONResponse({"error": "无权限，仅管理员可查看"}, status_code=403)
+
+    # 合併所有用戶（有 report_map 的優先，沒有的也顯示）
+    by_user: dict[str, dict] = {}
+    for msw_key, did in _report_map.items():
+        if did not in by_user:
+            info = _leaderboard.get(did, {"count": 0, "username": did})
+            by_user[did] = {"username": info["username"], "count": info["count"], "ids": []}
+        by_user[did]["ids"].append(msw_key)
+    # 補上 leaderboard 中有但 report_map 中沒有的用戶（早期數據）
+    for did, info in _leaderboard.items():
+        if did not in by_user:
+            by_user[did] = {"username": info["username"], "count": info["count"], "ids": ["（早期數據，無ID明細）"]}
+
+    result = sorted(by_user.values(), key=lambda x: x["count"], reverse=True)
+    return JSONResponse({"users": result, "total": len(_reported_ids)})
 
 
 @app.post("/upload")

@@ -18,13 +18,16 @@
                     {% else %}
                         <div class="avatar-default"><i class="fas fa-user"></i></div>
                     {% endif %}
-                    <span>{{ user.global_name or user.username }}</span>
+                    <span>{{ user.display_name }}</span>
                 </span>
                 {% if is_admin %}
                     <button onclick="showUpload()" class="btn btn-admin"><i class="fas fa-upload"></i> 上傳表格</button>
                     <button onclick="showSheetsConfig()" class="btn btn-admin"><i class="fas fa-link"></i> Google Sheets</button>
                 {% endif %}
                 <a href="/logout" class="btn btn-logout">退出</a>
+                <button onclick="showLeaderboard()" class="btn btn-leaderboard">
+                    <i class="fas fa-trophy"></i> 排行榜
+                </button>
             {% else %}
                 <a href="/login" class="btn btn-discord"><i class="fab fa-discord"></i> 用 Discord 登入</a>
             {% endif %}
@@ -97,6 +100,20 @@
                 </div>
             </div>
             {% endif %}
+
+            <!-- 排行榜彈窗 -->
+            <div id="leaderboardModal" class="modal" style="display:none;">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-trophy"></i> 檢舉排行榜</h3>
+                        <button onclick="closeLeaderboard()" class="close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="leaderboardStats" class="leaderboard-stats"></div>
+                        <div id="leaderboardList" class="leaderboard-list"></div>
+                    </div>
+                </div>
+            </div>
         {% endif %}
     </main>
 
